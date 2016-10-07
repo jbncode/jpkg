@@ -1,0 +1,16 @@
+*.a
+*.mod
+*.o
+*.pyc
+*.pyo
+*.so
+*.swp
+MANIFEST
+__pycache__/
+dist/
+test/jpkg-dir/distfiles/
+test/jpkg-dir/modulefiles/
+test/jpkg-dir/packages/
+test/jpkg-dir/tmp/
+test/jpkg-dir/usr/
+test/jpkg-dir/var/

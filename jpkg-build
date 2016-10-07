@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import jpkg
+
+
+def main():
+    args = parse_args()
+
+    # Read global configuration file
+    global_config_path = os.getenv('JPKG_CONFIG',
+                default=os.path.join(os.getenv('HOME'), '.jpkg', 'config.json'))
+    global_config = jpkg.Config(global_config_path)
+
+    # Read databases
+    package_state_database = jpkg.PackageDB(
+                os.path.join(global_config.get('database_dir'), 'package_db.json'))
+
+    # Get full paths to all jbuilds specified on the command line
+    explicit_jbuilds = []
+    for package in args.package:
+        jbuild = jpkg.Jbuild(global_config, package)
+        explicit_jbuilds.append(jbuild)
+
+    if not args.uninstall and not args.remove:
+        # Get list of all packages to install, including dependencies
+        all_jbuilds = []
+        dependencies = []
+        for jbuild in explicit_jbuilds:
+            j, d = jpkg.get_dependencies(global_config, jbuild)
+            all_jbuilds += j
+            dependencies += d
+
+        # Remove duplicate jbuilds
+        idx = 0
+        while idx < len(all_jbuilds):
+            if all_jbuilds[idx] in all_jbuilds[:idx]:
+                del all_jbuilds[idx]
+                del dependencies[idx]
+            else:
+                idx += 1
+
+        # Arrange packages in the order they should be installed
+        sorted_all_jbuilds = jpkg.topological_sort(all_jbuilds, dependencies)
+
+        # Display packages that will be installed
+        print('The following packages will be installed:')
+        actions = []
+        for jbuild in sorted_all_jbuilds:
+            # Determine what will be done with the package
+            actions.append({})
+            if package_state_database.isPackageBuilt(jbuild) \
+                        and (args.install or jbuild not in explicit_jbuilds):
+                actions[-1]['build'] = False
+            else:
+                actions[-1]['build'] = True
+            if args.install and jbuild in explicit_jbuilds:
+                actions[-1]['install'] = True
+            else:
+                actions[-1]['install'] = False
+
+            if actions[-1]['build'] or actions[-1]['install']:
+                prefix = [' ', ' ', ' ']
+                if actions[-1]['build']:
+                    prefix[0] = 'B'
+                if actions[-1]['install']:
+                    prefix[1] = 'I'
+                if jbuild not in explicit_jbuilds:
+                    prefix[2] = 'D'
+                print(' '*2 + '[' + ''.join(prefix) + '] ' + str(jbuild))
+        if args.ask:
+            do_continue = jpkg.yesno_prompt('Do you wish to continue? [Y/n]: ', default='y')
+            if not do_continue:
+                exit()
+
+        # Build the packages
+        for idx, jbuild in enumerate(sorted_all_jbuilds):
+            if not actions[idx]['build']:
+                continue
+            jpkg.status('Building %s...' % jbuild.getNameAndVersion())
+            jbuild.downloadDistfiles()
+            jbuild.build()
+            package_state_database.addPackage(jbuild, is_installed=False,
+                        is_user_selected=(jbuild in explicit_jbuilds))
+            jpkg.status('Successfully built %s.' % jbuild.getNameAndVersion())
+
+            # Install module files
+            if jbuild in explicit_jbuilds:
+                jpkg.status('Installing module for %s...' % jbuild.getNameAndVersion())
+                if os.path.isfile(jbuild.getModule()):
+                    module = jpkg.Module(jbuild.getModule())
+                else:
+                    module = jpkg.Module()
+                module_install_filename = os.path.join(global_config.get('modulefile_dir'),
+                            jbuild.getModuleDestDir(), jbuild.getVersion())
+                try:
+                    os.mkdir(os.path.dirname(module_install_filename))
+                except FileExistsError:
+                    pass
+                module.write(module_install_filename, jbuild.getInstallDir(),
+                            jbuild.getDescription())
+                jpkg.status('Successfully installed module for %s.' % jbuild.getNameAndVersion())
+
+
+        # Install into common directory tree if --install is specified
+        if args.install:
+            for jbuild in explicit_jbuilds:
+                jpkg.status('Installing %s...' % jbuild.getNameAndVersion())
+                jbuild.install()
+                package_state_database.installPackage(jbuild)
+                jpkg.status('Successfully installed %s.' % jbuild.getNameAndVersion())
+
+
+    elif args.remove or args.uninstall:
+        # Uninstall
+        for jbuild in explicit_jbuilds:
+            if package_state_database.isPackageInstalled(jbuild):
+                jpkg.status('Uninstalling %s...' % jbuild.getNameAndVersion())
+                jbuild.uninstall()
+                jpkg.status('Successfully uninstalled %s.' % jbuild.getNameAndVersion())
+            package_state_database.uninstallPackage(jbuild)
+
+            # Remove completely
+            if args.remove:
+                # Check if any dependencies will be broken
+                # TODO
+
+                jpkg.status('Removing %s...' % jbuild.getNameAndVersion())
+                jbuild.remove()
+                package_state_database.removePackage(jbuild)
+                jpkg.status('Successfully removed %s.' % jbuild.getNameAndVersion())
+
+
+def parse_args():
+    argparser = argparse.ArgumentParser(description='jpkg builder')
+
+    argparser.add_argument('-a', '--ask', action='store_true',
+            help='confirm action before performing it')
+    argparser.add_argument('-i', '--install', action='store_true',
+            help='install immediately after building')
+    argparser.add_argument('-u', '--uninstall', action='store_true',
+            help='uninstall from the usr directory')
+    argparser.add_argument('-r', '--remove', action='store_true',
+            help='uninstall then remove completely')
+    argparser.add_argument('package', metavar='PKG', type=str, nargs='+',
+            help='package name')
+
+    return argparser.parse_args()
+
+
+if __name__ == '__main__':
+    main()
