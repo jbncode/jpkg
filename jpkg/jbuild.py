@@ -238,9 +238,14 @@ class Jbuild:
             for f in files:
                 destfullpath = os.path.join(destfulldir, f)
 
-                # share/info/dir is in many packages, so ignore it
-                destsplit = destfullpath.split('/')
-                if destsplit[-3] == 'share' and destsplit[-2] == 'info' and destsplit[-1] == 'dir':
+                # some files are in many packages, so ignore them
+                if jpkg.is_trailing_path_equal(3, destfullpath, 'share/info/dir'):
+                    continue
+                if jpkg.is_trailing_path_equal(2, destfullpath, 'site-packages/easy-install.pth'):
+                    continue
+                if jpkg.is_trailing_path_equal(2, destfullpath, 'site-packages/site.py'):
+                    continue
+                if jpkg.is_trailing_path_equal(2, destfullpath, 'site-packages/__pycache__/site.cpython-35.pyc'):
                     continue
 
                 owning_package = installpaths.getPackageContainingPath(destfullpath)

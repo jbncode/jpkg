@@ -12,5 +12,6 @@ from jpkg.utils import get_jbuild_fullname, \
             yesno_prompt, \
             make_recursive_dir, \
             recursive_remove_dir, \
+            is_trailing_path_equal, \
             error, \
             status

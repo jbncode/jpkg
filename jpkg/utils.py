@@ -122,6 +122,19 @@ def recursive_remove_dir(directory):
     shutil.rmtree(directory, onerror=_remove_readonly)
 
 
+def is_trailing_path_equal(n, path1, path2):
+    path1n = os.path.normpath(path1)
+    path2n = os.path.normpath(path2)
+    path1s = path1n.split('/')
+    path2s = path2n.split('/')
+    if len(path1s) < n or len(path2s) < n:
+        return False
+    for i in range(n):
+        if path1s[-1-i] != path2s[-1-i]:
+            return False
+    return True
+
+
 def error(message):
     sys.stderr.write('\n\x1b[31m' + message + '\x1b[0m\n')
 
